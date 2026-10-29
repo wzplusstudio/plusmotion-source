@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/mark.svg" />
+    <script src="/boot.js"></script>
+    <style>
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      }
+
+      html[data-boot="1"] #boot-splash {
+        display: flex;
+      }
+
+      #boot-splash svg {
+        width: 48px;
+        height: 48px;
+      }
+    </style>
+    <link href="/src/index.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PlusMotion</title>
+    <meta name="description" content="Plan, assemble and revise reels, documentaries and ads for your clients in one editable workspace." />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="PlusMotion — reels, documentaries and ads from one workspace." />
+    <meta property="og:description" content="Plan, assemble and revise reels, documentaries and ads for your clients in one editable workspace." />
+    <meta property="og:image" content="/og-default.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PlusMotion — reels, documentaries and ads from one workspace." />
+    <meta name="twitter:description" content="Plan, assemble and revise reels, documentaries and ads for your clients in one editable workspace." />
+    <meta name="twitter:image" content="/og-default.png" />
+  </head>
+  <body>
+    <div id="boot-splash" aria-hidden="true">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="23" stroke="currentColor" stroke-width="3.6"/><path d="M32 21v22M21 32h22" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>
