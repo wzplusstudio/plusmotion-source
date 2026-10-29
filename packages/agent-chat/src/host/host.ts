@@ -58,6 +58,8 @@ export type AgentBridge = {
 };
 
 export type AgentHostOptions = {
+  /** Asked before a new Claude Code or Codex chat starts, because they work with the person's full access. Answered by something the page cannot reach. */
+  confirmFullAccess?: (info: { harness: string; cwd: string }) => Promise<boolean>;
   agents?: AgentBridge;
   store: ChatStore;
   harnesses: Harness[];
@@ -378,6 +380,10 @@ export class AgentHost {
     // (no spending, no approving, project tools only). A chat that has an agent role runs on a model API instead.
     if (agentId && (model.harness === "claude" || model.harness === "codex")) throw new HostError("harness-unavailable", "Agents run on OpenAI, Qwen or Claude (API) models. Claude Code and Codex have full access to this Mac, so they are used without an agent role.");
     if (!text.trim() && attachments.length === 0) throw new HostError("bad-request", "Nothing to send");
+
+    if (!params.chatId && (model.harness === "claude" || model.harness === "codex") && this.options.confirmFullAccess) {
+      if (!(await this.options.confirmFullAccess({ harness: model.harness, cwd }))) throw new HostError("harness-unavailable", "Cancelled: full access was not allowed.");
+    }
 
     let chat: Chat;
     if (params.chatId) {

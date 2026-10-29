@@ -30,7 +30,7 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 
 function render(text: string): string {
   const html = marked.parse(text) as string;
-  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, FORBID_TAGS: ["style", "form", "input", "button", "iframe", "object", "embed", "link", "meta"] });
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, FORBID_TAGS: ["style", "form", "input", "button", "iframe", "object", "embed", "link", "meta", "source", "picture", "video", "audio", "track"], FORBID_ATTR: ["srcset", "poster", "background", "style", "ping", "formaction", "action"] });
 }
 
 const handleClick = (event: MouseEvent) => {

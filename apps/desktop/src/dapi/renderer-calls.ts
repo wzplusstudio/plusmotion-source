@@ -4,8 +4,7 @@
 
 import { randomUUID } from "node:crypto";
 import { ipcMain } from "electron";
-import { dirname } from "node:path";
-import { trustDir } from "../path-roots";
+import { trustTemporarily } from "../path-roots";
 import { DAPI_WIRE, DapiError } from "@diffusionstudio/dapi";
 
 import type { BrowserWindow } from "electron";
@@ -55,7 +54,15 @@ export class RendererCalls {
   }
 
   async call(tool: string, args: unknown, signal: AbortSignal): Promise<unknown> {
-    trustToolPaths(args);
+    const release = trustToolPaths(args);
+    try {
+      return await this.callTrusted(tool, args, signal);
+    } finally {
+      release();                    // the folders a call names are trusted for that call only
+    }
+  }
+
+  private async callTrusted(tool: string, args: unknown, signal: AbortSignal): Promise<unknown> {
     const window = await this.window(tool);
     if (window.isDestroyed()) {
       throw new Error("The app window closed before replying");
@@ -166,15 +173,18 @@ function loaded(window: BrowserWindow, timeoutMs = 30000): Promise<BrowserWindow
 }
 
 /**
- * A tool call that comes in over the local MCP server or the CLI names the folders it works in (an export's output
- * file, a project folder). Those are the caller's own choice, so the renderer is allowed to write there for this run;
- * a path the renderer invents on its own is not.
+ * A tool call that comes in over the local MCP server or the CLI names where it works (an export's output file, a
+ * project folder). The renderer may write there while that call runs, and no longer once it ends. An output that looks
+ * like a file is trusted as that exact file; a folder as itself. Folders that contain the home folder are never trusted.
  */
-function trustToolPaths(args: unknown): void {
-  if (!args || typeof args !== "object") return;
-  for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
-    if (typeof value !== "string" || !value.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(value)) continue;
-    if (key === "output" || key === "path") trustDir(dirname(value));
-    else if (key === "dir" || key === "outDir" || key === "directory") trustDir(value);
+function trustToolPaths(args: unknown): () => void {
+  const releases: (() => void)[] = [];
+  if (args && typeof args === "object") {
+    for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+      if (typeof value !== "string" || !value.startsWith("/")) continue;
+      if (key === "output" || key === "path") releases.push(trustTemporarily(/\.[A-Za-z0-9]{2,5}$/.test(value) ? value : value));
+      else if (key === "dir" || key === "outDir" || key === "directory") releases.push(trustTemporarily(value));
+    }
   }
+  return () => releases.forEach((r) => r());
 }

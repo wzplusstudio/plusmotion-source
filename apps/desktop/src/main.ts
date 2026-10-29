@@ -18,7 +18,7 @@ import { DapiServer } from "./dapi/server";
 import { agentChatEndpoint, configureAgentChat, deleteProjectChats, pushAgentCredentials, stopAgentChat } from "./agent-chat";
 import { AI_PROVIDERS, aiCredRef, createAiService, listUserPresets } from "./ai-service";
 import { isAppUrl, permissionAllowed, safeExternalUrl } from "./navigation-policy";
-import { assertTrusted, trustDir } from "./path-roots";
+import { assertTrusted, assertTrustedProject, isTrusted, trustDir, useRegistry } from "./path-roots";
 import { claudePluginInstalled, installClaudePlugin } from "./plugin-installer";
 import { cliStatus, installCli, refreshCliShim, uninstallCli } from "./cli-install";
 import { applyMcp, healMcpRegistrations, mcpStatus } from "./mcp-install";
@@ -61,6 +61,7 @@ import {
   writeManifest,
   writeProject,
   draftsRoot,
+  peekProject,
 } from "./projects";
 import type { DeepLinkChannel } from "./main-channels";
 import type { LogEntry } from "@diffusionstudio/dapi";
@@ -292,6 +293,11 @@ function createWindow(): BrowserWindow {
     webPreferences: {
       preload: join(app.getAppPath(), "dist", "preload.js"),
       backgroundThrottling: false,
+      // Stated, not left to defaults: the page has no Node, and its preload is the only door to the main process.
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      webSecurity: true,
     },
   }
 
@@ -416,8 +422,9 @@ if (squirrelLaunch) {
   mainBridge.handle(MAIN_CHANNELS.CLI_UNINSTALL, () => uninstallCli());
   // PlusMotion client/project library. Lives under Movies, which is not an iCloud-synced folder.
   const plusmotionLibrary = new Library(join(app.getPath("videos"), "PlusMotion", "Library"));
-  trustDir(plusmotionLibrary.root);
-  trustDir(draftsRoot());
+  useRegistry(join(app.getPath("userData"), "trusted-folders.json"));
+  trustDir(plusmotionLibrary.root, { protect: true });
+  trustDir(draftsRoot(), { protect: true });
   // Provider credentials: encrypted with a key held in the macOS Keychain (Electron safeStorage), in the app's own data folder.
   const vault = new CredentialVault(join(app.getPath("userData"), "credentials.json"), {
     available: () => safeStorage.isEncryptionAvailable(),
@@ -459,7 +466,8 @@ if (squirrelLaunch) {
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_PICK_FOLDER, () => pickFolder(mainWindow));
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_GET, ({ dir }) => getProject(assertTrusted(dir)));
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_INIT, ({ dir }) => initProject(mainWindow, assertTrusted(dir)));
-  mainBridge.handle(MAIN_CHANNELS.PROJECTS_RESOLVE, ({ dir }) => resolveProject(dir));
+  // A folder the app has not opened itself is only looked at: no id is written into it, and it is not trusted.
+  mainBridge.handle(MAIN_CHANNELS.PROJECTS_RESOLVE, ({ dir }) => (isTrusted(dir) ? resolveProject(dir) : peekProject(dir)));
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_FIND_MOVED, ({ dir, id }) => findMovedProject(dir, id));
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_ASK_MISSING, ({ displayName, dir }) =>
     askAboutMissingProject(mainWindow, displayName, dir),
@@ -469,19 +477,20 @@ if (squirrelLaunch) {
     pickSaveLocation(mainWindow, dir, name, startIn, action),
   );
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_SAVE, ({ dir, target }) => saveProject(assertTrusted(dir), assertTrusted(target)));
-  mainBridge.handle(MAIN_CHANNELS.PROJECTS_MOVE, ({ dir, target }) => moveProject(assertTrusted(dir), assertTrusted(target)));
-  mainBridge.handle(MAIN_CHANNELS.PROJECTS_RENAME, ({ dir, displayName }) => renameProject(assertTrusted(dir), displayName));
-  mainBridge.handle(MAIN_CHANNELS.PROJECTS_DUPLICATE, ({ dir }) => duplicateProject(assertTrusted(dir)));
-  mainBridge.handle(MAIN_CHANNELS.PROJECTS_DELETE, ({ dir }) => deleteProject(assertTrusted(dir)).then(deleteProjectChats));
+  mainBridge.handle(MAIN_CHANNELS.PROJECTS_MOVE, ({ dir, target }) => moveProject(assertTrustedProject(dir), assertTrusted(target)));
+  mainBridge.handle(MAIN_CHANNELS.PROJECTS_RENAME, ({ dir, displayName }) => renameProject(assertTrustedProject(dir), displayName));
+  mainBridge.handle(MAIN_CHANNELS.PROJECTS_DUPLICATE, ({ dir }) => duplicateProject(assertTrustedProject(dir)));
+  mainBridge.handle(MAIN_CHANNELS.PROJECTS_DELETE, ({ dir }) => deleteProject(assertTrustedProject(dir)).then(deleteProjectChats));
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_COMPILE, ({ dir }) => compileProject(assertTrusted(dir)));
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_WRITE, ({ dir, edits }) => {
     countCanvasEdits(edits.map((edit) => edit.kind));
     return writeProject(assertTrusted(dir), edits);
   });
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_WATCH, ({ dir }, event) => {
+    assertTrusted(dir);
     lastProject = dir;
     tray.refresh();
-    watchProject(BrowserWindow.fromWebContents(event.sender), assertTrusted(dir));
+    watchProject(BrowserWindow.fromWebContents(event.sender), dir);
   });
   mainBridge.handle(MAIN_CHANNELS.PROJECTS_UNWATCH, ({ dir }) => {
     if (lastProject === dir) {

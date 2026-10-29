@@ -44,6 +44,8 @@ export type AgentHostConfig = {
   pluginDir?: string;
   /** API keys for the OpenAI, Qwen and Claude connections. Sent by the app over its private channel, never argv. */
   credentials?: Partial<Record<ApiProviderId, string>>;
+  /** See AgentHostOptions.confirmFullAccess. */
+  confirmFullAccess?: (info: { harness: string; cwd: string }) => Promise<boolean>;
   /** For tests: replaces the real harnesses. */
   harnesses?: Harness[];
   log?: (message: string) => void;
@@ -69,6 +71,7 @@ export async function createAgentHost(config: AgentHostConfig): Promise<RunningA
   const agentHost = new AgentHost({
     store,
     agents: bridge?.agents,
+    confirmFullAccess: config.confirmFullAccess,
     harnesses: config.harnesses ?? [new ClaudeHarness(config.version, config.pluginDir), new CodexHarness(), new ApiHarness(OPENAI, api), new ApiHarness(QWEN, api), new ApiHarness(ANTHROPIC, api)],
     env,
     mcp: config.mcp,

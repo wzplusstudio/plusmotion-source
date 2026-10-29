@@ -470,7 +470,7 @@ export async function findMovedProject(dir: string, id: string): Promise<Project
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const candidate = join(parent, entry.name);
-    if (recordedId(await readPackage(candidate)) === id) { trustDir(candidate); return describe(candidate); }
+    if (recordedId(await readPackage(candidate)) === id) return describe(candidate);
   }
   return null;
 }
@@ -506,9 +506,13 @@ export async function askAboutMissingProject(
  * app to that id's URL. What the app calls when it opens a project; null
  * when `dir` holds none.
  */
+/** What `dir` holds, read only: nothing is written and nothing is trusted. For a folder the app has not itself opened. */
+export async function peekProject(dir: string): Promise<ProjectInfo | null> {
+  return describe(dir);
+}
+
 export async function resolveProject(dir: string): Promise<ProjectInfo | null> {
   const project = await describe(dir);
-  if (project) trustDir(dir);                 // only a folder that really holds a project is ever trusted this way
   if (!project || project.id) return project;
   await ensureProjectId(dir);
   return describe(dir);

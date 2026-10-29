@@ -22,6 +22,7 @@ type StartMessage = { type: "start"; config: AgentHostConfig };
 type StopMessage = { type: "stop" };
 type DeleteProjectMessage = { type: "deleteProject"; projectId: string };
 type CredentialsMessage = { type: "credentials"; keys: Record<string, string> };
+type ConfirmedMessage = { type: "confirmed"; id: string; ok: boolean };
 
 function parseArgs(argv: string[]): Record<string, string | true> {
   const out: Record<string, string | true> = {};
@@ -46,6 +47,8 @@ function str(value: string | true | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+const pendingConfirms = new Map<string, (ok: boolean) => void>();
+
 async function main(): Promise<void> {
   const parentPort = (process as unknown as { parentPort?: ParentPort }).parentPort;
   let running: RunningAgentHost | null = null;
@@ -65,12 +68,13 @@ async function main(): Promise<void> {
 
   if (parentPort) {
     parentPort.on("message", ({ data }) => {
-      const message = data as StartMessage | StopMessage | DeleteProjectMessage | CredentialsMessage;
+      const message = data as StartMessage | StopMessage | DeleteProjectMessage | CredentialsMessage | ConfirmedMessage;
       if (message?.type === "stop") void stop();
       if (message?.type === "deleteProject") running?.deleteChats(message.projectId);
       if (message?.type === "credentials") running?.setCredentials(message.keys);
+      if (message?.type === "confirmed") { const done = pendingConfirms.get(message.id); pendingConfirms.delete(message.id); done?.(message.ok === true); }
       if (message?.type !== "start") return;
-      createAgentHost({ ...message.config, log: (line) => console.error(`[agent-chat] ${line}`) })
+      createAgentHost({ ...message.config, confirmFullAccess: ({ harness, cwd }) => new Promise<boolean>((resolve) => { const id = crypto.randomUUID(); pendingConfirms.set(id, resolve); parentPort.postMessage({ type: "confirm", id, harness, cwd }); setTimeout(() => { if (pendingConfirms.delete(id)) resolve(false); }, 120_000); }), log: (line) => console.error(`[agent-chat] ${line}`) })
         .then((host) => {
           running = host;
           parentPort.postMessage({ type: "listening", port: host.port, url: host.url });

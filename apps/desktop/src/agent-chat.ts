@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { app, utilityProcess } from "electron";
+import { app, BrowserWindow, dialog, utilityProcess } from "electron";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
@@ -34,6 +34,16 @@ let stopped = false;
 
 const waiting = new Set<() => void>();
 
+/** A native dialog the page cannot answer: Claude Code and Codex can run commands and change files anywhere the person can. */
+async function askFullAccess(harness: string, cwd: string): Promise<boolean> {
+  const name = harness === "codex" ? "Codex" : "Claude Code";
+  const opts = { type: "warning" as const, buttons: ["Cancel", `Allow ${name}`], defaultId: 0, cancelId: 0, title: "PlusMotion", message: `Start a ${name} chat?`,
+    detail: `${name} can run commands and change files anywhere on this Mac that you can, not only in this project.\n\nFolder: ${cwd.replace(/[\u0000-\u001f]/g, " ").slice(0, 200)}` };
+  const win = BrowserWindow.getAllWindows()[0];
+  const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+  return r.response === 1;
+}
+
 function spawn(): void {
   if (!options || stopped) return;
   const path = join(app.getAppPath(), "dist", "agent-host.mjs");
@@ -56,7 +66,11 @@ function spawn(): void {
     });
   });
 
-  proc.on("message", (message: { type?: string; url?: string; message?: string }) => {
+  proc.on("message", (message: { type?: string; url?: string; message?: string; id?: string; harness?: string; cwd?: string }) => {
+    if (message?.type === "confirm" && typeof message.id === "string") {
+      void askFullAccess(String(message.harness), String(message.cwd)).then((ok) => proc.postMessage({ type: "confirmed", id: message.id, ok }));
+      return;
+    }
     if (message?.type === "listening" && typeof message.url === "string") {
       endpoint = { url: message.url };
       restarts = 0;
